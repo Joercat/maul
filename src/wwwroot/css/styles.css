@@ -1,0 +1,18 @@
+.powerup-speed {
+    color: #FF4500;
+}
+
+.powerup-double {
+    color: #4B0082;
+}
+
+.powerup-invincible {
+    color: #008000;
+}
+
+#powerups span {
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin: 0 2px;
+    font-weight: bold;
+}
