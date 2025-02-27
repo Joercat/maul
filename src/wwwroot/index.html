@@ -2,45 +2,174 @@
 <html>
 <head>
     <title>Mauling Simulator</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            background: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        canvas {
+            border: 2px solid #666;
+            margin-top: 20px;
+        }
+        #stats {
+            color: white;
+            font-family: Arial;
+            margin-top: 10px;
+        }
+        #mini-game {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+            color: white;
+        }
+        .progress-bar {
+            width: 300px;
+            height: 30px;
+            background: #444;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+        .progress {
+            width: 50%;
+            height: 100%;
+            background: #0f0;
+            transition: width 0.1s;
+        }
+    </style>
 </head>
 <body>
-    <canvas id="game" width="800" height="600" style="border:1px solid #000"></canvas>
+    <div id="stats">
+        Level: <span id="level">1</span> | 
+        Power-ups: <span id="powerups">None</span>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="mini-game">
+        <h2>MAULING BATTLE!</h2>
+        <div class="progress-bar">
+            <div class="progress" id="battle-progress"></div>
+        </div>
+        <p>SPAM SPACEBAR!</p>
+    </div>
+
     <script>
-        const connection = new signalR.HubConnectionBuilder().withUrl("/gameHub").build();
-        const canvas = document.getElementById("game");
-        const ctx = canvas.getContext("2d");
-        let players = [];
-        let myId;
+        const ws = new WebSocket(`ws://${window.location.host}`);
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let playerId;
+        let gameState;
 
-        connection.start().then(() => {
-            const name = prompt("Enter name:");
-            const isDog = confirm("Play as dog?");
-            myId = connection.connectionId;
-            connection.invoke("Join", name, isDog);
-        });
-
-        canvas.onmousemove = (e) => {
-            const rect = canvas.getBoundingClientRect();
-            connection.invoke("Move", e.clientX - rect.left, e.clientY - rect.top);
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            speed: 5
         };
 
-        connection.on("update", newPlayers => {
-            players = newPlayers;
+        ws.onmessage = (event) => {
+            gameState = JSON.parse(event.data);
+            if (!playerId) {
+                playerId = Object.keys(gameState.Players)[0];
+            }
+            updateStats();
             draw();
-        });
+        };
+
+        function updateStats() {
+            const player = gameState.Players[playerId];
+            document.getElementById('level').textContent = player.Level;
+            let powerups = [];
+            if (player.IsInvincible) powerups.push('Invincible');
+            if (player.HasSpeedBoost) powerups.push('Speed Boost');
+            if (player.HasDoublePower) powerups.push('Double Power');
+            document.getElementById('powerups').textContent = powerups.length ? powerups.join(', ') : 'None';
+        }
 
         function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            players.forEach(p => {
+            ctx.fillStyle = '#222';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw players
+            Object.values(gameState.Players).forEach(player => {
+                ctx.fillStyle = player.IsInvincible ? '#ff0' : '#f00';
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.fillStyle = p.isDog ? "brown" : "blue";
+                ctx.arc(player.X, player.Y, 20, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.fillText(p.name, p.x - 10, p.y - p.size - 5);
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Lv.${player.Level}`, player.X, player.Y - 30);
             });
-            requestAnimationFrame(draw);
+
+            // Draw NPCs
+            gameState.NPCs.forEach(npc => {
+                ctx.fillStyle = '#0f0';
+                ctx.beginPath();
+                ctx.arc(npc.X, npc.Y, 15, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw power-ups
+            gameState.PowerUps.forEach(powerup => {
+                ctx.fillStyle = '#00f';
+                ctx.beginPath();
+                ctx.arc(powerup.X, powerup.Y, 10, 0, Math.PI * 2);
+                ctx.fill();
+            });
         }
+
+        document.addEventListener('keydown', (e) => {
+            const player = gameState.Players[playerId];
+            let dx = 0, dy = 0;
+
+            switch(e.key) {
+                case 'ArrowUp': dy = -player.Speed; break;
+                case 'ArrowDown': dy = player.Speed; break;
+                case 'ArrowLeft': dx = -player.Speed; break;
+                case 'ArrowRight': dx = player.Speed; break;
+                case ' ':
+                    if (document.getElementById('mini-game').style.display === 'block') {
+                        ws.send(JSON.stringify({
+                            action: 'miniGameInput',
+                            playerId
+                        }));
+                    }
+                    break;
+            }
+
+            if (dx !== 0 || dy !== 0) {
+                ws.send(JSON.stringify({
+                    action: 'move',
+                    x: player.X + dx,
+                    y: player.Y + dy
+                }));
+            }
+        });
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            Object.entries(gameState.Players).forEach(([id, other]) => {
+                if (id !== playerId) {
+                    const dx = other.X - x;
+                    const dy = other.Y - y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < 30) {
+                        ws.send(JSON.stringify({
+                            action: 'attack',
+                            targetId: id
+                        }));
+                    }
+                }
+            });
+        });
     </script>
 </body>
 </html>
