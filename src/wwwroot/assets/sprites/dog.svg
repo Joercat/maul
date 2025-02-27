@@ -5,9 +5,9 @@
   <!-- Head -->
   <circle cx="48" cy="32" r="12" fill="#8B4513"/>
   
-  <!-- Ears - now with better shape -->
-  <path d="M42 20 C38 16, 42 12, 46 16" fill="#8B4513"/>
-  <path d="M54 20 C58 16, 54 12, 50 16" fill="#8B4513"/>
+  <!-- Ears - perfectly aligned -->
+  <path d="M44 24 C40 14, 36 18, 40 24" fill="#8B4513"/>
+  <path d="M52 24 C56 14, 60 18, 56 24" fill="#8B4513"/>
   
   <!-- Eyes -->
   <circle cx="44" cy="30" r="2" fill="black"/>
