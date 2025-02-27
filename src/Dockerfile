@@ -1,35 +1,36 @@
 # Build stage
 FROM mcr.microsoft.com/dotnet/sdk:7.0 AS build
-WORKDIR /source
+WORKDIR /src
 
-# Copy everything first to ensure all files are available
-COPY . .
+# Create new web project
+RUN dotnet new web --name MaulingSimulator
+WORKDIR /src/MaulingSimulator
 
-# Restore and build
-RUN dotnet restore
-RUN dotnet publish -c Release -o /app
+# Copy your source files
+COPY Program.cs .
+COPY MaulingSimulator.csproj .
+COPY wwwroot/ ./wwwroot/
+
+# Build the project
+RUN dotnet build -c Release
+RUN dotnet publish -c Release -o /app/publish
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:7.0
 WORKDIR /app
 
 # Copy built app
-COPY --from=build /app ./
-
-# Copy static files explicitly
-COPY ["wwwroot/", "./wwwroot/"]
+COPY --from=build /app/publish .
 
 # Set environment variables
 ENV ASPNETCORE_URLS=http://+:5000
 ENV PORT=5000
 ENV ASPNETCORE_ENVIRONMENT=Production
 
-# Create non-root user for security
+# Create non-root user
 RUN adduser -u 5678 --disabled-password --gecos "" appuser && chown -R appuser /app
 USER appuser
 
-# Expose port
 EXPOSE 5000
 
-# Set entry point
 ENTRYPOINT ["dotnet", "MaulingSimulator.dll"]
