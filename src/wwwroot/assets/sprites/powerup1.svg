@@ -1,0 +1,5 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="32" cy="32" r="24" fill="#FF4500" stroke="#FF0000" stroke-width="4"/>
+    <path d="M32 16L36 28H48L38 36L42 48L32 40L22 48L26 36L16 28H28L32 16Z" fill="#FFD700"/>
+    <text x="32" y="36" font-size="12" text-anchor="middle" fill="white">SPEED</text>
+</svg>
