@@ -1,13 +1,13 @@
 .powerup-speed {
-    color: #FF4500;
+    background-image: url('/assets/sprites/powerup.svg');
 }
 
 .powerup-double {
-    color: #4B0082;
+    background-image: url('/assets/sprites/powerup1.svg');
 }
 
 .powerup-invincible {
-    color: #008000;
+    background-image: url('/assets/sprites/powerup2.svg');
 }
 
 #powerups span {
