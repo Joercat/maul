@@ -1,25 +1,25 @@
-<svg width="64" height="64" viewBox="0 0 13 13" xmlns="http://www.w3.org/2000/svg">
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
   <!-- Body -->
-  <ellipse cx="6.5" cy="8" rx="4" ry="2.5" fill="#8B4513"/>
+  <ellipse cx="32" cy="40" rx="20" ry="12" fill="#8B4513"/>
   
   <!-- Head -->
-  <circle cx="10" cy="6.5" r="2.3" fill="#8B4513"/>
+  <circle cx="48" cy="32" r="12" fill="#8B4513"/>
   
-  <!-- Ears -->
-  <ellipse cx="9" cy="4.5" rx="1.2" ry="1.5" transform="rotate(-15)" fill="#8B4513"/>
-  <ellipse cx="11" cy="4.5" rx="1.2" ry="1.5" transform="rotate(15)" fill="#8B4513"/>
+  <!-- Ears - now with better shape -->
+  <path d="M42 20 C38 16, 42 12, 46 16" fill="#8B4513"/>
+  <path d="M54 20 C58 16, 54 12, 50 16" fill="#8B4513"/>
   
   <!-- Eyes -->
-  <circle cx="9.2" cy="6" r="0.4" fill="black"/>
-  <circle cx="10.8" cy="6" r="0.4" fill="black"/>
+  <circle cx="44" cy="30" r="2" fill="black"/>
+  <circle cx="52" cy="30" r="2" fill="black"/>
   
   <!-- Nose -->
-  <circle cx="10" cy="7" r="0.5" fill="#4A2511"/>
+  <circle cx="48" cy="34" r="3" fill="#4A2511"/>
   
   <!-- Legs -->
-  <rect x="4" y="9.5" width="1" height="2.5" fill="#8B4513"/>
-  <rect x="8" y="9.5" width="1" height="2.5" fill="#8B4513"/>
+  <rect x="20" y="46" width="5" height="12" fill="#8B4513"/>
+  <rect x="40" y="46" width="5" height="12" fill="#8B4513"/>
   
   <!-- Tail -->
-  <path d="M2.5 6.5 Q2 5.5 2.5 4.5" stroke="#8B4513" stroke-width="0.8" fill="none"/>
+  <path d="M12 32 Q8 26 12 20" stroke="#8B4513" stroke-width="4" fill="none"/>
 </svg>
