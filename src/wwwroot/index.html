@@ -2,198 +2,142 @@
 <html>
 <head>
     <title>Mauling Simulator</title>
-    <link rel="stylesheet" href="/css/styles.css">
     <style>
         body {
             margin: 0;
-            background: #333;
+            background: #111;
             display: flex;
             flex-direction: column;
             align-items: center;
-            font-family: Arial, sans-serif;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+        #gameContainer {
+            position: relative;
+            transform: scale(0.7);
+            transform-origin: top center;
+        }
+        #scoreboard {
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 10px;
+            margin: 10px;
+            width: 300px;
+            text-align: center;
+        }
+        .score-entry {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            font-size: 18px;
+        }
+        #startScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+        #startScreen input {
+            padding: 10px;
+            font-size: 20px;
+            margin: 20px;
+            width: 300px;
+            text-align: center;
+            border-radius: 5px;
+            border: none;
+        }
+        #startScreen button {
+            padding: 15px 30px;
+            font-size: 24px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #startScreen button:hover {
+            background: #45a049;
         }
         #gameCanvas {
-            border: 3px solid #666;
-            margin-top: 20px;
-            background: #222;
+            background: #1a1a1a;
         }
-        #stats {
+        .player-info {
+            position: absolute;
             color: white;
-            padding: 10px;
-            background: rgba(0, 0, 0, 0.5);
-            border-radius: 5px;
-            margin-top: 10px;
-            width: 800px;
-            text-align: center;
+            font-size: 14px;
+            pointer-events: none;
         }
-        .powerup {
-            display: inline-block;
-            padding: 5px 10px;
-            margin: 0 5px;
-            border-radius: 3px;
-        }
-        .powerup-speed { background: #FF4500; }
-        .powerup-double { background: #4B0082; }
-        .powerup-invincible { background: #008000; }
-        #mini-game {
+        #attackIndicator {
             position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.9);
-            padding: 20px;
-            border-radius: 10px;
+            background: rgba(255,0,0,0.3);
+            border-radius: 50%;
+            pointer-events: none;
             display: none;
-            text-align: center;
-            color: white;
         }
     </style>
 </head>
 <body>
-    <div id="stats">
-        Level: <span id="level">1</span> | 
-        Power-ups: <span id="powerups">None</span>
+    <div id="scoreboard">
+        <h2>Top Players</h2>
+        <div id="topScores"></div>
     </div>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <div id="mini-game">
-        <h2>MAULING BATTLE!</h2>
-        <div class="progress-bar">
-            <div class="progress" id="battle-progress"></div>
-        </div>
-        <p>SPAM SPACEBAR!</p>
+
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="1600" height="1200"></canvas>
+        <div id="attackIndicator"></div>
     </div>
-<script src="/js/game.js"></script>
+
+    <div id="startScreen">
+        <h1>Mauling Simulator</h1>
+        <input type="text" id="playerName" placeholder="Enter your name" maxlength="15">
+        <button onclick="startGame()">Start Game</button>
+    </div>
+<script src="js/game.js"></script>
     <script>
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        let playerId;
-        let gameState;
-
-        function loadImages() {
-            const dogImage = new Image();
-            dogImage.src = 'assets/sprites/dog.svg';
-            const humanImage = new Image();
-            humanImage.src = 'assets/sprites/human.svg';
-            const powerupImages = {
-                SpeedBoost: 'assets/sprites/powerup.svg',
-                DoublePower: 'assets/sprites/powerup1.svg',
-                Invincibility: 'assets/sprites/powerup2.svg'
-            };
-            return { dogImage, humanImage, powerupImages };
-        }
-
-        const images = loadImages();
-
-        ws.onmessage = (event) => {
-            gameState = JSON.parse(event.data);
-            if (!playerId && Object.keys(gameState.Players).length > 0) {
-                playerId = Object.keys(gameState.Players)[0];
+        let playerName = '';
+        
+        function startGame() {
+            const nameInput = document.getElementById('playerName');
+            playerName = nameInput.value.trim() || 'Player' + Math.floor(Math.random() * 1000);
+            if (playerName) {
+                document.getElementById('startScreen').style.display = 'none';
+                initGame(playerName);
             }
-            updateStats();
-            draw();
-        };
-
-        function updateStats() {
-            if (!gameState || !playerId) return;
-            const player = gameState.Players[playerId];
-            document.getElementById('level').textContent = player.Level;
-            let powerups = [];
-            if (player.IsInvincible) powerups.push('Invincible');
-            if (player.HasSpeedBoost) powerups.push('Speed Boost');
-            if (player.HasDoublePower) powerups.push('Double Power');
-            document.getElementById('powerups').textContent = powerups.length ? powerups.join(', ') : 'None';
         }
 
-        function draw() {
-            if (!gameState) return;
+        document.getElementById('playerName').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') startGame();
+        });
+
+        function updateScoreboard(players) {
+            const scores = Object.values(players)
+                .sort((a, b) => b.Level - a.Level)
+                .slice(0, 3);
             
-            ctx.fillStyle = '#222';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Draw NPCs
-            gameState.NPCs.forEach(npc => {
-                ctx.fillStyle = '#0f0';
-                ctx.beginPath();
-                ctx.arc(npc.X, npc.Y, 15 + (npc.Size * 5), 0, Math.PI * 2);
-                ctx.fill();
-            });
-
-            // Draw Players
-            Object.values(gameState.Players).forEach(player => {
-                ctx.fillStyle = player.IsInvincible ? '#ff0' : '#f00';
-                ctx.beginPath();
-                ctx.arc(player.X, player.Y, 20, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.fillStyle = '#fff';
-                ctx.font = '14px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(`Lv.${player.Level}`, player.X, player.Y - 25);
-            });
-
-            // Draw PowerUps
-            gameState.PowerUps.forEach(powerup => {
-                ctx.fillStyle = '#00f';
-                ctx.beginPath();
-                ctx.arc(powerup.X, powerup.Y, 10, 0, Math.PI * 2);
-                ctx.fill();
-            });
+            const scoreHtml = scores.map((player, index) => `
+                <div class="score-entry">
+                    <span>${index + 1}. ${player.Name}</span>
+                    <span>Level ${player.Level}</span>
+                </div>
+            `).join('');
+            
+            document.getElementById('topScores').innerHTML = scoreHtml;
         }
 
-        document.addEventListener('keydown', (e) => {
-            if (!gameState || !playerId) return;
-            const player = gameState.Players[playerId];
-            let dx = 0, dy = 0;
-            const speed = player.Speed;
-
-            switch(e.key) {
-                case 'ArrowUp': dy = -speed; break;
-                case 'ArrowDown': dy = speed; break;
-                case 'ArrowLeft': dx = -speed; break;
-                case 'ArrowRight': dx = speed; break;
-                case ' ':
-                    if (document.getElementById('mini-game').style.display === 'block') {
-                        ws.send(JSON.stringify({
-                            action: 'miniGameInput',
-                            playerId
-                        }));
-                    }
-                    break;
-            }
-
-            if (dx !== 0 || dy !== 0) {
-                ws.send(JSON.stringify({
-                    action: 'move',
-                    x: player.X + dx,
-                    y: player.Y + dy
-                }));
-            }
-        });
-
-        canvas.addEventListener('click', (e) => {
-            if (!gameState || !playerId) return;
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-
-            Object.entries(gameState.Players).forEach(([id, other]) => {
-                if (id !== playerId) {
-                    const dx = other.X - x;
-                    const dy = other.Y - y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-                    if (distance < 30) {
-                        ws.send(JSON.stringify({
-                            action: 'attack',
-                            targetId: id
-                        }));
-                    }
-                }
-            });
-        });
-
-        // Initial draw
-        draw();
+        function initGame(playerName) {
+            const script = document.createElement('script');
+            script.src = '/js/game.js';
+            script.onload = () => initializeGame(playerName);
+            document.body.appendChild(script);
+        }
     </script>
 </body>
 </html>
