@@ -302,3 +302,21 @@ public class NPC
     public float Y { get; set; }
     public int Size { get; set; }
 }
+
+public class MiniGame
+{
+    public string AttackerId { get; set; }
+    public string DefenderId { get; set; }
+    public float Progress { get; set; }
+    public DateTime StartTime { get; set; }
+    public float Difficulty { get; set; }
+
+    public bool ProcessInput(string playerId, bool isAttacker)
+    {
+        float increment = isAttacker ? 0.1f : -0.1f;
+        increment *= Difficulty;
+        Progress += increment;
+
+        return Progress >= 1f;
+    }
+}
