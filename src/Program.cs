@@ -8,6 +8,7 @@ public class Program
     private static GameState gameState = new();
     private static Dictionary<string, WebSocket> clients = new();
     private static Dictionary<string, MiniGame> activeMinigames = new();
+    private static Random random = new();
 
     public static void Main(string[] args)
     {
@@ -49,10 +50,7 @@ public class Program
 
     private static async Task HandleWebSocketConnection(string playerId, WebSocket socket)
     {
-        var player = new Player { Id = playerId, X = 0, Y = 0 };
-        gameState.Players.Add(playerId, player);
-
-        var buffer = new byte[1024];
+        var buffer = new byte[4096];
         try
         {
             while (socket.State == WebSocketState.Open)
@@ -65,50 +63,63 @@ public class Program
                 }
             }
         }
+        catch (WebSocketException)
+        {
+            // Connection closed
+        }
         finally
         {
-            gameState.Players.Remove(playerId);
-            clients.Remove(playerId);
+            if (gameState.Players.ContainsKey(playerId))
+            {
+                gameState.Players.Remove(playerId);
+                clients.Remove(playerId);
+                await BroadcastGameState();
+            }
         }
     }
 
     private static async Task ProcessMessageAsync(string playerId, string message)
     {
-        var data = JsonSerializer.Deserialize<Dictionary<string, object>>(message);
-        string action = data["action"].ToString();
+        var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(message);
+        string action = data["action"].GetString();
 
         switch (action)
         {
+            case "join":
+                var name = data["name"].GetString();
+                gameState.Players[playerId] = new Player 
+                { 
+                    Id = playerId,
+                    Name = name,
+                    X = random.Next(100, 1500),
+                    Y = random.Next(100, 1100)
+                };
+                break;
+
             case "move":
-                UpdatePlayerPosition(playerId, float.Parse(data["x"].ToString()), float.Parse(data["y"].ToString()));
+                if (gameState.Players.TryGetValue(playerId, out var player))
+                {
+                    player.X = data["x"].GetSingle();
+                    player.Y = data["y"].GetSingle();
+                    CheckPowerUpCollisions(player);
+                    CheckNPCCollisions(player);
+                }
                 break;
+
             case "attack":
-                string targetId = data["targetId"].ToString();
-                await InitiateMiniGame(playerId, targetId);
-                break;
-            case "miniGameInput":
-                ProcessMiniGameInput(playerId);
+                var targetId = data["targetId"].GetString();
+                await InitiateAttack(playerId, targetId);
                 break;
         }
 
         await BroadcastGameState();
     }
 
-    private static void UpdatePlayerPosition(string playerId, float x, float y)
-    {
-        var player = gameState.Players[playerId];
-        player.X = x;
-        player.Y = y;
-
-        CheckPowerUpCollisions(player);
-        CheckNPCCollisions(player);
-    }
-
     private static void CheckPowerUpCollisions(Player player)
     {
         foreach (var powerUp in gameState.PowerUps.ToList())
         {
-            if (IsColliding(player.X, player.Y, powerUp.X, powerUp.Y))
+            if (IsColliding(player.X, player.Y, powerUp.X, powerUp.Y, 30))
             {
                 ApplyPowerUp(player, powerUp);
                 gameState.PowerUps.Remove(powerUp);
@@ -120,14 +131,13 @@ public class Program
     {
         switch (powerUp.Type)
         {
-            case PowerUpType.Invincibility:
-                player.IsInvincible = true;
-                player.InvincibleEndTime = DateTime.Now.AddSeconds(5);
-                break;
             case PowerUpType.SpeedBoost:
                 player.HasSpeedBoost = true;
-                player.Speed *= 2;
-                player.SpeedBoostEndTime = DateTime.Now.AddSeconds(5);
+                player.SpeedBoostEndTime = DateTime.UtcNow.AddSeconds(10);
+                break;
+            case PowerUpType.Invincibility:
+                player.IsInvincible = true;
+                player.InvincibleEndTime = DateTime.UtcNow.AddSeconds(5);
                 break;
             case PowerUpType.DoublePower:
                 player.HasDoublePower = true;
@@ -139,54 +149,33 @@ public class Program
     {
         foreach (var npc in gameState.NPCs.ToList())
         {
-            if (IsColliding(player.X, player.Y, npc.X, npc.Y))
+            if (IsColliding(player.X, player.Y, npc.X, npc.Y, 40))
             {
-                player.Level = Math.Min(100, player.Level + 1);
+                player.Level = Math.Min(100, player.Level + npc.Size);
                 gameState.NPCs.Remove(npc);
             }
         }
     }
 
-    private static bool IsColliding(float x1, float y1, float x2, float y2)
+    private static bool IsColliding(float x1, float y1, float x2, float y2, float distance)
     {
-        const float collisionDistance = 50f;
-        return Math.Sqrt(Math.Pow(x2 - x1, 2) + Math.Pow(y2 - y1, 2)) < collisionDistance;
+        return Math.Sqrt(Math.Pow(x2 - x1, 2) + Math.Pow(y2 - y1, 2)) < distance;
     }
 
-    private static async Task InitiateMiniGame(string attackerId, string defenderId)
+    private static async Task InitiateAttack(string attackerId, string defenderId)
     {
+        if (!gameState.Players.ContainsKey(defenderId)) return;
+
         var attacker = gameState.Players[attackerId];
         var defender = gameState.Players[defenderId];
 
-        float difficulty = (float)attacker.Level / defender.Level;
-        
-        var miniGame = new MiniGame
-        {
-            AttackerId = attackerId,
-            DefenderId = defenderId,
-            Progress = 0.5f,
-            StartTime = DateTime.Now,
-            Difficulty = difficulty
-        };
+        if (defender.IsInvincible) return;
 
-        activeMinigames[attackerId] = miniGame;
+        float damage = attacker.HasDoublePower ? 2 : 1;
+        defender.Level = Math.Max(1, defender.Level - (int)damage);
+        attacker.Level = Math.Min(100, attacker.Level + 1);
+
         await BroadcastGameState();
-    }
-
-    private static void ProcessMiniGameInput(string playerId)
-    {
-        if (activeMinigames.TryGetValue(playerId, out var miniGame))
-        {
-            bool isAttacker = playerId == miniGame.AttackerId;
-            bool attackerWins = miniGame.ProcessInput(playerId, isAttacker);
-
-            if (attackerWins)
-            {
-                var attacker = gameState.Players[miniGame.AttackerId];
-                attacker.Level = Math.Min(100, attacker.Level + (isAttacker ? 2 : 3));
-                activeMinigames.Remove(playerId);
-            }
-        }
     }
 
     private static async Task BroadcastGameState()
@@ -194,15 +183,19 @@ public class Program
         var state = JsonSerializer.Serialize(gameState);
         var buffer = System.Text.Encoding.UTF8.GetBytes(state);
         
-        foreach (var client in clients)
+        foreach (var client in clients.Where(c => c.Value.State == WebSocketState.Open))
         {
-            if (client.Value.State == WebSocketState.Open)
+            try
             {
                 await client.Value.SendAsync(
                     new ArraySegment<byte>(buffer),
                     WebSocketMessageType.Text,
                     true,
                     CancellationToken.None);
+            }
+            catch
+            {
+                // Client disconnected
             }
         }
     }
@@ -211,43 +204,59 @@ public class Program
     {
         _ = SpawnPowerUps();
         _ = SpawnNPCs();
+        _ = UpdatePowerUpEffects();
     }
 
     private static async Task SpawnPowerUps()
     {
-        var random = new Random();
         while (true)
         {
             if (gameState.PowerUps.Count < 5)
             {
                 gameState.PowerUps.Add(new PowerUp
                 {
-                    X = random.Next(50, 750),
-                    Y = random.Next(50, 550),
+                    X = random.Next(100, 1500),
+                    Y = random.Next(100, 1100),
                     Type = (PowerUpType)random.Next(3)
                 });
                 await BroadcastGameState();
             }
-            await Task.Delay(10000); // Spawn every 10 seconds
+            await Task.Delay(5000);
         }
     }
 
     private static async Task SpawnNPCs()
     {
-        var random = new Random();
         while (true)
         {
             if (gameState.NPCs.Count < 10)
             {
                 gameState.NPCs.Add(new NPC
                 {
-                    X = random.Next(50, 750),
-                    Y = random.Next(50, 550),
+                    X = random.Next(100, 1500),
+                    Y = random.Next(100, 1100),
                     Size = random.Next(1, 4)
                 });
                 await BroadcastGameState();
             }
-            await Task.Delay(5000); // Spawn every 5 seconds
+            await Task.Delay(3000);
+        }
+    }
+
+    private static async Task UpdatePowerUpEffects()
+    {
+        while (true)
+        {
+            var now = DateTime.UtcNow;
+            foreach (var player in gameState.Players.Values)
+            {
+                if (player.IsInvincible && now > player.InvincibleEndTime)
+                    player.IsInvincible = false;
+                
+                if (player.HasSpeedBoost && now > player.SpeedBoostEndTime)
+                    player.HasSpeedBoost = false;
+            }
+            await Task.Delay(100);
         }
     }
 }
@@ -259,7 +268,6 @@ public class Player
     public int Level { get; set; } = 1;
     public float X { get; set; }
     public float Y { get; set; }
-    public float Speed { get; set; } = 5f;
     public bool IsInvincible { get; set; }
     public bool HasSpeedBoost { get; set; }
     public bool HasDoublePower { get; set; }
@@ -283,8 +291,8 @@ public class PowerUp
 
 public enum PowerUpType
 {
-    Invincibility,
     SpeedBoost,
+    Invincibility,
     DoublePower
 }
 
@@ -293,25 +301,4 @@ public class NPC
     public float X { get; set; }
     public float Y { get; set; }
     public int Size { get; set; }
-}
-
-public class MiniGame
-{
-    public string AttackerId { get; set; }
-    public string DefenderId { get; set; }
-    public float Progress { get; set; }
-    public DateTime StartTime { get; set; }
-    public float Difficulty { get; set; }
-
-    public bool ProcessInput(string playerId, bool isAttacker)
-    {
-        float increment = isAttacker ? 0.1f : -0.1f;
-        increment *= Difficulty;
-        Progress += increment;
-
-        if (Progress >= 1f) return true;
-        if (Progress <= 0f) return false;
-
-        return false;
-    }
 }
