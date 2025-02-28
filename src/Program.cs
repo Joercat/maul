@@ -5,10 +5,10 @@ namespace MaulingSimulator;
 
 public class Program
 {
-    private static GameState gameState = new();
-    private static Dictionary<string, WebSocket> clients = new();
-    private static Dictionary<string, MiniGame> activeMinigames = new();
-    private static Random random = new();
+    private static readonly GameState gameState = new();
+    private static readonly Dictionary<string, WebSocket> clients = new();
+    private static readonly Dictionary<string, MiniGame> activeMinigames = new();
+    private static readonly Random random = new();
 
     public static void Main(string[] args)
     {
@@ -81,34 +81,51 @@ public class Program
     private static async Task ProcessMessageAsync(string playerId, string message)
     {
         var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(message);
-        string action = data["action"].GetString();
+        if (data == null) return;
+
+        if (!data.TryGetValue("action", out var actionElement)) return;
+        string? action = actionElement.GetString();
+        if (action == null) return;
 
         switch (action)
         {
             case "join":
-                var name = data["name"].GetString();
-                gameState.Players[playerId] = new Player 
-                { 
-                    Id = playerId,
-                    Name = name,
-                    X = random.Next(100, 1500),
-                    Y = random.Next(100, 1100)
-                };
+                if (data.TryGetValue("name", out var nameElement))
+                {
+                    string playerName = nameElement.GetString() ?? $"Player{random.Next(1000)}";
+                    gameState.Players[playerId] = new Player 
+                    { 
+                        Id = playerId,
+                        Name = playerName,
+                        X = random.Next(100, 1500),
+                        Y = random.Next(100, 1100)
+                    };
+                }
                 break;
 
             case "move":
                 if (gameState.Players.TryGetValue(playerId, out var player))
                 {
-                    player.X = data["x"].GetSingle();
-                    player.Y = data["y"].GetSingle();
-                    CheckPowerUpCollisions(player);
-                    CheckNPCCollisions(player);
+                    if (data.TryGetValue("x", out var xElement) && 
+                        data.TryGetValue("y", out var yElement))
+                    {
+                        player.X = xElement.GetSingle();
+                        player.Y = yElement.GetSingle();
+                        CheckPowerUpCollisions(player);
+                        CheckNPCCollisions(player);
+                    }
                 }
                 break;
 
             case "attack":
-                var targetId = data["targetId"].GetString();
-                await InitiateAttack(playerId, targetId);
+                if (data.TryGetValue("targetId", out var targetElement))
+                {
+                    string? targetId = targetElement.GetString();
+                    if (targetId != null)
+                    {
+                        await InitiateAttack(playerId, targetId);
+                    }
+                }
                 break;
         }
 
@@ -263,8 +280,8 @@ public class Program
 
 public class Player
 {
-    public string Id { get; set; }
-    public string Name { get; set; }
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
     public int Level { get; set; } = 1;
     public float X { get; set; }
     public float Y { get; set; }
@@ -305,8 +322,8 @@ public class NPC
 
 public class MiniGame
 {
-    public string AttackerId { get; set; }
-    public string DefenderId { get; set; }
+    public string AttackerId { get; set; } = string.Empty;
+    public string DefenderId { get; set; } = string.Empty;
     public float Progress { get; set; }
     public DateTime StartTime { get; set; }
     public float Difficulty { get; set; }
@@ -316,7 +333,6 @@ public class MiniGame
         float increment = isAttacker ? 0.1f : -0.1f;
         increment *= Difficulty;
         Progress += increment;
-
         return Progress >= 1f;
     }
 }
