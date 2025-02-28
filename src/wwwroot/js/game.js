@@ -1,3 +1,81 @@
+const SOUNDS = {
+    attack: new Audio('/assets/sounds/attack.mp3'),
+    powerup: new Audio('/assets/sounds/powerup.mp3'),
+    levelup: new Audio('/assets/sounds/levelup.mp3')
+};
+
+Object.values(SOUNDS).forEach(sound => {
+    sound.volume = 0.3;
+});
+
+// Particle System
+class ParticleSystem {
+    constructor() {
+        this.particles = [];
+    }
+
+    emit(x, y, color, count = 10) {
+        for (let i = 0; i < count; i++) {
+            this.particles.push({
+                x, y,
+                vx: (Math.random() - 0.5) * 10,
+                vy: (Math.random() - 0.5) * 10,
+                life: 1,
+                color
+            });
+        }
+    }
+
+    update() {
+        this.particles = this.particles.filter(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life -= 0.02;
+            return p.life > 0;
+        });
+    }
+
+    draw(ctx) {
+        this.particles.forEach(p => {
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+    }
+}
+
+// UI System
+class GameUI {
+    static updateScoreboard(players) {
+        const scores = Object.values(players)
+            .sort((a, b) => b.Level - a.Level)
+            .slice(0, 3);
+        
+        const scoreHtml = scores.map((player, index) => `
+            <div class="score-entry">
+                <span>${index + 1}. ${player.Name}</span>
+                <span>Level ${player.Level}</span>
+            </div>
+        `).join('');
+        
+        document.getElementById('topScores').innerHTML = scoreHtml;
+    }
+
+    static showAttackRange(x, y) {
+        const indicator = document.getElementById('attackIndicator');
+        indicator.style.display = 'block';
+        indicator.style.left = `${x - 50}px`;
+        indicator.style.top = `${y - 50}px`;
+        indicator.style.width = '100px';
+        indicator.style.height = '100px';
+        setTimeout(() => indicator.style.display = 'none', 100);
+    }
+}
+
+// Main Game Code
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
 const canvas = document.getElementById('gameCanvas');
@@ -5,200 +83,209 @@ const ctx = canvas.getContext('2d');
 let playerId;
 let gameState;
 
-// Asset loading
-const images = {
-    dog: new Image(),
-    human: new Image(),
+const particles = new ParticleSystem();
+
+// Game assets
+const ASSETS = {
+    dog: '/assets/sprites/dog.svg',
+    human: '/assets/sprites/human.svg',
     powerups: {
-        SpeedBoost: new Image(),
-        DoublePower: new Image(),
-        Invincibility: new Image()
+        SpeedBoost: '/assets/sprites/powerup.svg',
+        DoublePower: '/assets/sprites/powerup1.svg',
+        Invincibility: '/assets/sprites/powerup2.svg'
     }
 };
 
-images.dog.src = '/assets/sprites/dog.png';
-images.human.src = '/assets/sprites/human.png';
-images.powerups.SpeedBoost.src = '/assets/sprites/powerup.svg';
-images.powerups.DoublePower.src = '/assets/sprites/powerup1.svg';
-images.powerups.Invincibility.src = '/assets/sprites/powerup2.svg';
+// Wall configuration
+const WALLS = [
+    { x: 100, y: 100, width: 200, height: 40 },
+    { x: 400, y: 300, width: 40, height: 400 },
+    { x: 800, y: 200, width: 300, height: 40 },
+    { x: 1200, y: 600, width: 40, height: 300 },
+    { x: 200, y: 800, width: 400, height: 40 }
+];
 
-// WebSocket Connection Handlers
+// Game constants
+const PLAYER_SIZE = 15;
+const BASE_SPEED = 8;
+const ATTACK_RANGE = 50;
+
+function loadAssets() {
+    return new Promise(resolve => {
+        let loaded = 0;
+        const required = Object.keys(ASSETS).length + Object.keys(ASSETS.powerups).length;
+        
+        function onLoad() {
+            loaded++;
+            if (loaded === required) resolve();
+        }
+
+        Object.entries(ASSETS).forEach(([key, value]) => {
+            if (typeof value === 'string') {
+                const img = new Image();
+                img.onload = onLoad;
+                img.src = value;
+                ASSETS[key] = img;
+            } else {
+                Object.entries(value).forEach(([pKey, pValue]) => {
+                    const img = new Image();
+                    img.onload = onLoad;
+                    img.src = pValue;
+                    ASSETS[key][pKey] = img;
+                });
+            }
+        });
+    });
+}
+
 ws.onopen = () => {
     console.log('Connected to game server!');
     ws.send(JSON.stringify({
         action: 'join',
-        name: 'Player' + Math.floor(Math.random() * 1000)
+        name: playerName
     }));
 };
 
-ws.onerror = (error) => {
-    console.log('WebSocket error:', error);
-};
-
-ws.onclose = () => {
-    console.log('Disconnected from server');
-};
-
 ws.onmessage = (event) => {
-    console.log('Received game state:', event.data);
     gameState = JSON.parse(event.data);
     if (!playerId && Object.keys(gameState.Players).length > 0) {
         playerId = Object.keys(gameState.Players)[0];
-        console.log('Player ID assigned:', playerId);
     }
-    updateStats();
-    draw();
+    GameUI.updateScoreboard(gameState.Players);
 };
 
-function updateStats() {
-    if (!gameState || !playerId) return;
-    const player = gameState.Players[playerId];
-    document.getElementById('level').textContent = player.Level;
-    
-    let powerups = [];
-    if (player.IsInvincible) powerups.push('<span class="powerup powerup-invincible">Invincible</span>');
-    if (player.HasSpeedBoost) powerups.push('<span class="powerup powerup-speed">Speed Boost</span>');
-    if (player.HasDoublePower) powerups.push('<span class="powerup powerup-double">Double Power</span>');
-    
-    document.getElementById('powerups').innerHTML = powerups.length ? powerups.join(' ') : 'None';
+function drawWalls() {
+    ctx.fillStyle = '#444';
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 2;
+    WALLS.forEach(wall => {
+        ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+        ctx.strokeRect(wall.x, wall.y, wall.width, wall.height);
+    });
+}
+
+function checkWallCollision(x, y, radius = PLAYER_SIZE) {
+    return WALLS.some(wall => 
+        x + radius > wall.x && 
+        x - radius < wall.x + wall.width && 
+        y + radius > wall.y && 
+        y - radius < wall.y + wall.height
+    );
 }
 
 function draw() {
     if (!gameState) return;
-    
-    // Clear canvas
-    ctx.fillStyle = '#222';
+
+    ctx.fillStyle = '#1a1a1a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw NPCs
-    gameState.NPCs.forEach(npc => {
-        ctx.fillStyle = '#0f0';
-        ctx.beginPath();
-        ctx.arc(npc.X, npc.Y, 15 + (npc.Size * 5), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.stroke();
-    });
+    drawWalls();
 
-    // Draw PowerUps
-    gameState.PowerUps.forEach(powerup => {
-        const powerupSize = 20;
-        ctx.fillStyle = getPowerUpColor(powerup.Type);
-        ctx.beginPath();
-        ctx.arc(powerup.X, powerup.Y, powerupSize, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#fff';
-        ctx.stroke();
-    });
+    // Draw game elements
+    gameState.PowerUps.forEach(drawPowerUp);
+    gameState.NPCs.forEach(drawNPC);
+    Object.values(gameState.Players).forEach(player => 
+        drawPlayer(player, player.Id === playerId)
+    );
 
-    // Draw Players
-    Object.values(gameState.Players).forEach(player => {
-        const isCurrentPlayer = player.Id === playerId;
-        drawPlayer(player, isCurrentPlayer);
-    });
+    particles.update();
+    particles.draw(ctx);
 }
 
 function drawPlayer(player, isCurrentPlayer) {
-    const size = 30;
     ctx.save();
-    
-    // Player circle
+    ctx.translate(player.X, player.Y);
+
+    // Draw player body
     ctx.beginPath();
-    ctx.arc(player.X, player.Y, size, 0, Math.PI * 2);
+    ctx.arc(0, 0, PLAYER_SIZE, 0, Math.PI * 2);
     ctx.fillStyle = player.IsInvincible ? '#ff0' : (isCurrentPlayer ? '#f00' : '#f66');
     ctx.fill();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Level text
+    // Draw player name and level
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 16px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`Lv.${player.Level}`, player.X, player.Y - size - 5);
-
-    // Name
-    ctx.fillStyle = '#fff';
-    ctx.font = '14px Arial';
-    ctx.fillText(player.Name || 'Player', player.X, player.Y + size + 15);
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText(player.Name, 0, -PLAYER_SIZE - 10);
+    ctx.font = '12px Arial';
+    ctx.fillText(`Lv.${player.Level}`, 0, -PLAYER_SIZE - 25);
 
     ctx.restore();
 }
 
-function getPowerUpColor(type) {
-    switch(type) {
-        case 'SpeedBoost': return '#FF4500';
-        case 'DoublePower': return '#4B0082';
-        case 'Invincibility': return '#008000';
-        default: return '#00f';
+function drawPowerUp(powerup) {
+    const img = ASSETS.powerups[powerup.Type];
+    if (img) {
+        ctx.drawImage(img, powerup.X - 15, powerup.Y - 15, 30, 30);
     }
 }
 
-// Input Handlers
-document.addEventListener('keydown', (e) => {
-    if (!gameState || !playerId) return;
-    const player = gameState.Players[playerId];
-    let dx = 0, dy = 0;
-    const speed = player.Speed;
-
-    switch(e.key) {
-        case 'ArrowUp': dy = -speed; break;
-        case 'ArrowDown': dy = speed; break;
-        case 'ArrowLeft': dx = -speed; break;
-        case 'ArrowRight': dx = speed; break;
-        case ' ':
-            if (document.getElementById('mini-game').style.display === 'block') {
-                ws.send(JSON.stringify({
-                    action: 'miniGameInput',
-                    playerId
-                }));
-            }
-            break;
-    }
-
-    if (dx !== 0 || dy !== 0) {
-        ws.send(JSON.stringify({
-            action: 'move',
-            x: player.X + dx,
-            y: player.Y + dy
-        }));
-    }
-});
+function drawNPC(npc) {
+    ctx.fillStyle = '#0f0';
+    ctx.beginPath();
+    ctx.arc(npc.X, npc.Y, 15 + (npc.Size * 5), 0, Math.PI * 2);
+    ctx.fill();
+}
 
 canvas.addEventListener('click', (e) => {
     if (!gameState || !playerId) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scale = canvas.width / rect.width;
+    const x = (e.clientX - rect.left) * scale;
+    const y = (e.clientY - rect.top) * scale;
 
     Object.entries(gameState.Players).forEach(([id, other]) => {
         if (id !== playerId) {
             const dx = other.X - x;
             const dy = other.Y - y;
             const distance = Math.sqrt(dx * dx + dy * dy);
-            if (distance < 30) {
+            if (distance < ATTACK_RANGE) {
                 ws.send(JSON.stringify({
                     action: 'attack',
                     targetId: id
                 }));
+                SOUNDS.attack.play();
+                particles.emit(x, y, '#f00', 20);
+                GameUI.showAttackRange(e.clientX, e.clientY);
             }
         }
     });
 });
 
-// Mini-game handling
-function updateMiniGame(progress) {
-    const progressBar = document.getElementById('battle-progress');
-    progressBar.style.width = `${progress * 100}%`;
-}
+document.addEventListener('keydown', (e) => {
+    if (!gameState || !playerId) return;
+    const player = gameState.Players[playerId];
+    let dx = 0, dy = 0;
+    const speed = BASE_SPEED * (player.HasSpeedBoost ? 2 : 1);
 
-// Initial draw
-draw();
+    switch(e.key) {
+        case 'ArrowUp': dy = -speed; break;
+        case 'ArrowDown': dy = speed; break;
+        case 'ArrowLeft': dx = -speed; break;
+        case 'ArrowRight': dx = speed; break;
+    }
 
-// Animation loop
-function gameLoop() {
-    draw();
-    requestAnimationFrame(gameLoop);
-}
+    if (dx !== 0 || dy !== 0) {
+        const newX = player.X + dx;
+        const newY = player.Y + dy;
+        
+        if (!checkWallCollision(newX, newY)) {
+            ws.send(JSON.stringify({
+                action: 'move',
+                x: newX,
+                y: newY
+            }));
+        }
+    }
+});
 
-gameLoop();
+// Start game loop
+loadAssets().then(() => {
+    function gameLoop() {
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+    gameLoop();
+});
